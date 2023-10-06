@@ -11,9 +11,10 @@ HS_DIR := "$(HOME)/home_stuff"
 ZSHRC_TARGET := "$(HOME)/.zshrc"
 ZSHRC_BAK := "$(HOME)/.zshrc.bak"
 
-all: install_dependencies make_omz make_home_stuff
+all: install_dependencies
+install: make_omz make_home_stuff
 
-.PHONY: install_dependencies make_omz make_home_stuff clean
+.PHONY: all install install_dependencies make_omz make_home_stuff clean
 
 install_dependencies:
 ifeq ($(KERNEL),Darwin)
