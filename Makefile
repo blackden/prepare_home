@@ -45,10 +45,10 @@ make_home_stuff:
 	else \
 		git clone $(HS_REPO) $(HS_DIR); \
 		cp -a $(HS_DIR)/.zshrc $(ZSHRC_TARGET); \
-		chsh -s $(ZSH_PATH) $(USER); \
+		sudo chsh -s $(ZSH_PATH) $(USER); \
 	fi
 
 clean:
 	rm -rf $(OMZ_DIR) $(HS_DIR) $(ZSHRC_TARGET)
-	chsh -s $(SHELL) $(USER)
+	sudo chsh -s $(SHELL) $(USER)
 
