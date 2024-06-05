@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-ZSH_PATH := $(shell which zsh)
+ZSH_PATH := /bin/zsh
 
 KERNEL := $(shell uname -s)
 DISTRO := $(shell cat /etc/*release | grep -oP '(?<=ID=)\w+' | head -1 | tr '[:upper:]' '[:lower:]')
