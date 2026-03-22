@@ -1,4 +1,6 @@
 #!/bin/sh
+# Copyright (C) 2026 Ragnar
+# SPDX-License-Identifier: GPL-3.0-only
 set -eu
 
 # =========================
