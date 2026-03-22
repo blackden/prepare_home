@@ -58,3 +58,10 @@ Enable sudo for wheel:
 ```sh
 sudo sh install.sh --enable-wheel-sudo --i-know-what-im-doing
 ```
+
+## License
+
+Copyright (C) 2026 Ragnar (blackden, ragnar.black)
+
+Licensed under the GNU General Public License v3.0 only.
+See [`LICENSE`](LICENSE) for the full text.
