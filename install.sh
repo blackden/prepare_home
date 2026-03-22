@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (C) 2026 Ragnar
+# Copyright (C) 2026 Ragnar (blackden, ragnar.black)
 # SPDX-License-Identifier: GPL-3.0-only
 set -eu
 
