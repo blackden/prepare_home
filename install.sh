@@ -173,6 +173,10 @@ detect_os() {
                         OS="${ID}"
                         PKG_MANAGER="apt"
                         ;;
+                    fedora|rhel|centos|rocky|almalinux)
+                        OS="${ID}"
+                        PKG_MANAGER="dnf"
+                        ;;
                     *)
                         OS="${ID:-linux}"
                         PKG_MANAGER=""
@@ -248,25 +252,6 @@ alpine_install_missing_packages() {
     run_as_root apk add $mapped ca-certificates sudo
 }
 
-alpine_enable_wheel_sudo() {
-    need_cmd visudo || die "visudo is required to validate sudoers configuration"
-
-    log "enabling sudo for wheel via /etc/sudoers.d/wheel"
-
-    if [ "$DRY_RUN" -eq 1 ]; then
-        printf '%s\n' "[dry-run] mkdir -p /etc/sudoers.d"
-        printf '%s\n' "[dry-run] write /etc/sudoers.d/wheel"
-        printf '%s\n' "[dry-run] chmod 0440 /etc/sudoers.d/wheel"
-        printf '%s\n' "[dry-run] visudo -c"
-        return 0
-    fi
-
-    run_as_root mkdir -p /etc/sudoers.d
-    printf '%%wheel ALL=(ALL:ALL) ALL\n' | run_as_root tee /etc/sudoers.d/wheel >/dev/null
-    run_as_root chmod 0440 /etc/sudoers.d/wheel
-    run_as_root visudo -c
-}
-
 # =========================
 # OS-specific: Debian/Ubuntu
 # =========================
@@ -299,23 +284,69 @@ deb_install_missing_packages() {
     run_as_root apt install -y $mapped ca-certificates sudo
 }
 
-deb_enable_wheel_sudo() {
+# =========================
+# OS-specific: Fedora/RHEL
+# =========================
+
+rpm_map_missing_packages() {
+    mapped=""
+
+    for pkg in "$@"; do
+        case "$pkg" in
+            chsh)
+                # util-linux on Fedora 40+, util-linux-user on older Fedora/RHEL
+                mapped="$mapped /usr/bin/chsh"
+                ;;
+            visudo)
+                mapped="$mapped sudo"
+                ;;
+            vim)
+                mapped="$mapped vim-enhanced"
+                ;;
+            *)
+                mapped="$mapped $pkg"
+                ;;
+        esac
+    done
+
+    dedupe_words "$mapped"
+}
+
+rpm_install_missing_packages() {
+    missing="$1"
+    mapped="$(rpm_map_missing_packages $missing)"
+
+    run_as_root dnf install -y $mapped ca-certificates sudo
+}
+
+# =========================
+# Common: Linux sudoers
+# =========================
+
+linux_enable_wheel_sudo() {
     need_cmd visudo || die "visudo is required to validate sudoers configuration"
 
     log "enabling sudo for wheel via /etc/sudoers.d/wheel"
 
     if [ "$DRY_RUN" -eq 1 ]; then
-        printf '%s\n' "[dry-run] mkdir -p /etc/sudoers.d"
-        printf '%s\n' "[dry-run] write /etc/sudoers.d/wheel"
-        printf '%s\n' "[dry-run] chmod 0440 /etc/sudoers.d/wheel"
-        printf '%s\n' "[dry-run] visudo -c"
+        printf '%s\n' "[dry-run] write temporary sudoers file"
+        printf '%s\n' "[dry-run] visudo -cf <temporary file>"
+        printf '%s\n' "[dry-run] install -m 0440 -o root -g root <temporary file> /etc/sudoers.d/wheel"
         return 0
     fi
 
+    tmp_sudoers="$(mktemp)"
+    printf '%%wheel ALL=(ALL:ALL) ALL\n' > "$tmp_sudoers"
+
+    # validate before installing: a broken file in sudoers.d disables sudo entirely
+    if ! run_as_root visudo -cf "$tmp_sudoers"; then
+        rm -f "$tmp_sudoers"
+        die "generated sudoers file failed validation"
+    fi
+
     run_as_root mkdir -p /etc/sudoers.d
-    printf '%%wheel ALL=(ALL:ALL) ALL\n' | run_as_root tee /etc/sudoers.d/wheel >/dev/null
-    run_as_root chmod 0440 /etc/sudoers.d/wheel
-    run_as_root visudo -c
+    run_as_root install -m 0440 -o root -g root "$tmp_sudoers" /etc/sudoers.d/wheel
+    rm -f "$tmp_sudoers"
 }
 
 # =========================
@@ -353,6 +384,9 @@ install_missing_packages() {
         ubuntu|debian)
             deb_install_missing_packages "$missing"
             ;;
+        fedora|rhel|centos|rocky|almalinux)
+            rpm_install_missing_packages "$missing"
+            ;;
         macos)
             macos_install_missing_packages "$missing"
             ;;
@@ -364,11 +398,8 @@ install_missing_packages() {
 
 enable_wheel_sudo() {
     case "$OS" in
-        alpine)
-            alpine_enable_wheel_sudo
-            ;;
-        ubuntu|debian)
-            deb_enable_wheel_sudo
+        alpine|ubuntu|debian|fedora|rhel|centos|rocky|almalinux)
+            linux_enable_wheel_sudo
             ;;
         macos)
             macos_enable_wheel_sudo
@@ -385,24 +416,37 @@ enable_wheel_sudo() {
 
 user_exists() {
     username="$1"
-    awk -F: -v u="$username" '$1 == u {found=1} END {exit !found}' /etc/passwd
+    id "$username" >/dev/null 2>&1
+}
+
+# passwd field for a user: 6 = home, 7 = shell
+# macOS keeps users in Directory Services, not in /etc/passwd
+user_field() {
+    username="$1"
+    field="$2"
+
+    if [ "$OS" = "macos" ]; then
+        case "$field" in
+            6) key="NFSHomeDirectory" ;;
+            7) key="UserShell" ;;
+            *) die "unsupported passwd field: $field" ;;
+        esac
+        dscl . -read "/Users/$username" "$key" 2>/dev/null | awk '{print $2}'
+    else
+        awk -F: -v u="$username" -v f="$field" '$1 == u {print $f}' /etc/passwd
+    fi
 }
 
 user_home() {
     username="$1"
-    if [ "$username" = "root" ]; then
-        printf '%s\n' "/root"
-        return 0
-    fi
-
-    home_dir="$(awk -F: -v u="$username" '$1 == u {print $6}' /etc/passwd)"
+    home_dir="$(user_field "$username" 6)"
     [ -n "$home_dir" ] || die "cannot determine home for user: $username"
     printf '%s\n' "$home_dir"
 }
 
 user_shell() {
     username="$1"
-    awk -F: -v u="$username" '$1 == u {print $7}' /etc/passwd
+    user_field "$username" 7
 }
 
 ensure_home_exists() {
@@ -571,12 +615,31 @@ install_ohmyzsh_for_user() {
     fi
 }
 
+# Prefer the zsh path already registered in /etc/shells: under sudo PATH starts
+# with /usr/sbin, which on merged-/usr systems (Fedora 42+) also holds zsh
+resolve_zsh_path() {
+    if [ -r /etc/shells ]; then
+        while IFS= read -r shell_path; do
+            case "$shell_path" in
+                */zsh)
+                    if [ -x "$shell_path" ]; then
+                        printf '%s\n' "$shell_path"
+                        return 0
+                    fi
+                    ;;
+            esac
+        done < /etc/shells
+    fi
+
+    command -v zsh || true
+}
+
 set_login_shell_for_user() {
     username="$1"
 
     [ "$SKIP_SHELL" -eq 0 ] || return 0
 
-    zsh_path="$(command -v zsh || true)"
+    zsh_path="$(resolve_zsh_path)"
     [ -n "$zsh_path" ] || die "zsh not found in PATH"
 
     ensure_shell_in_etc_shells "$zsh_path"

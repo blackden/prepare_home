@@ -1,54 +1,74 @@
-SHELL := /bin/bash
-ZSH_PATH := /bin/zsh
+# Copyright (C) 2026 Ragnar (blackden, ragnar.black)
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Thin wrapper over install.sh: all logic lives in the script,
+# targets only map to its modes and options.
 
-KERNEL := $(shell uname -s)
-DISTRO := $(shell cat /etc/*release | grep -oP '(?<=ID=)\w+' | head -1 | tr '[:upper:]' '[:lower:]')
+SHELL := /bin/sh
+INSTALL := sh ./install.sh
 
-OMZ_REPO := "https://github.com/ohmyzsh/ohmyzsh.git"
-HS_REPO := "https://github.com/blackden/home_stuff.git"
-OMZ_DIR := "$(HOME)/.oh-my-zsh"
-HS_DIR := "$(HOME)/home_stuff"
-ZSHRC_TARGET := "$(HOME)/.zshrc"
-ZSHRC_BAK := "$(HOME)/.zshrc.bak"
+# Options: make <target> USERS=ragnar,papan DRY_RUN=1
+USERS ?=
+DRY_RUN ?=
+YES ?=
+SKIP_SHELL ?=
+# install.sh refuses to run as root without it
+I_KNOW_WHAT_IM_DOING ?=
 
-all: install_dependencies
-install: make_omz make_home_stuff
+OPTS := $(if $(USERS),--users $(USERS)) \
+        $(if $(DRY_RUN),--dry-run) \
+        $(if $(YES),--yes) \
+        $(if $(SKIP_SHELL),--skip-shell) \
+        $(if $(I_KNOW_WHAT_IM_DOING),--i-know-what-im-doing)
 
-.PHONY: all install install_dependencies make_omz make_home_stuff clean
+OMZ_DIR := $(HOME)/.oh-my-zsh
+HS_DIR := $(HOME)/home_stuff
+FALLBACK_SHELL := /bin/bash
 
-install_dependencies:
-ifeq ($(KERNEL),Darwin)
-	brew update && brew upgrade
-	brew install git zsh rsync
-else ifeq ($(KERNEL),Linux)
-ifeq ($(DISTRO),ubuntu)
-	sudo apt update
-	sudo apt install -y git zsh	
-endif
-endif
+.DEFAULT_GOAL := help
+.PHONY: help install minimal omz dotfiles wheel-sudo interactive clean
 
-make_omz:
-	@if [ -d $(OMZ_DIR) ];  then \
-		echo "OMZ уже склонирован."; \
-	else \
-		git clone $(OMZ_REPO) $(OMZ_DIR); \
-		if [ -e $(ZSHRC_TARGET) ]; then \
-			cp -a $(ZSHRC_TARGET) $(ZSHRC_BAK); \
-		else \
-			echo "$(ZSHRC_TARGET) не существует."; \
-		fi \
-	fi
+help:
+	@echo "Targets:"
+	@echo "  install      oh-my-zsh + login shell + .zshrc + .vimrc  (install.sh --all)"
+	@echo "  minimal      oh-my-zsh + login shell                    (install.sh)"
+	@echo "  omz          oh-my-zsh + login shell only               (install.sh --omz-only)"
+	@echo "  dotfiles     .zshrc + .vimrc only                       (install.sh --dotfiles-only)"
+	@echo "  wheel-sudo   enable sudo for %wheel                     (install.sh --enable-wheel-sudo)"
+	@echo "  interactive  choose mode interactively                  (install.sh --interactive)"
+	@echo "  clean        current user: remove oh-my-zsh, restore .zshrc/.vimrc backups, reset shell"
+	@echo
+	@echo "Variables:"
+	@echo "  USERS=u1,u2             target users (required as root)"
+	@echo "  DRY_RUN=1               print actions only"
+	@echo "  YES=1                   install missing packages without asking"
+	@echo "  SKIP_SHELL=1            do not change login shell"
+	@echo "  I_KNOW_WHAT_IM_DOING=1  required when running as root"
+	@echo
+	@echo "Example:"
+	@echo "  sudo make install USERS=root,ragnar,papan I_KNOW_WHAT_IM_DOING=1 YES=1"
 
-make_home_stuff:
-	@if [ -d $(HS_DIR) ];  then \
-		echo "home_stuff уже склонирован."; \
-	else \
-		git clone $(HS_REPO) $(HS_DIR); \
-		cp -a $(HS_DIR)/.zshrc $(ZSHRC_TARGET); \
-		sudo chsh -s $(ZSH_PATH) $(USER); \
-	fi
+install:
+	$(INSTALL) --all $(OPTS)
+
+minimal:
+	$(INSTALL) $(OPTS)
+
+omz:
+	$(INSTALL) --omz-only $(OPTS)
+
+dotfiles:
+	$(INSTALL) --dotfiles-only $(OPTS)
+
+wheel-sudo:
+	$(INSTALL) --enable-wheel-sudo $(OPTS)
+
+interactive:
+	$(INSTALL) --interactive $(OPTS)
 
 clean:
-	rm -rf $(OMZ_DIR) $(HS_DIR) $(ZSHRC_TARGET)
-	sudo chsh -s $(SHELL) $(USER)
-
+	rm -rf "$(OMZ_DIR)" "$(HS_DIR)"
+	for f in .zshrc .vimrc; do \
+		if [ -f "$(HOME)/$$f.bak" ]; then mv -f "$(HOME)/$$f.bak" "$(HOME)/$$f"; fi; \
+	done
+	sudo chsh -s $(FALLBACK_SHELL) $(USER)

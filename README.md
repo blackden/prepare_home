@@ -16,6 +16,21 @@ Full mode:
 curl -fsSL https://raw.githubusercontent.com/blackden/prepare_home/master/install.sh | sh -s -- --all
 ```
 
+## Supported systems
+
+macOS (brew), Debian/Ubuntu (apt), Fedora/RHEL/CentOS/Rocky/Alma (dnf), Alpine (apk).
+
+## Make
+
+`Makefile` is a thin wrapper over `install.sh`; run `make` for the list of targets.
+
+```sh
+make install                     # = sh install.sh --all
+make minimal DRY_RUN=1           # = sh install.sh --dry-run
+sudo make install USERS=root,ragnar,papan I_KNOW_WHAT_IM_DOING=1 YES=1
+sudo make wheel-sudo I_KNOW_WHAT_IM_DOING=1
+```
+
 ## Modes
 
 - default: `minimal` — install zsh, oh-my-zsh, set login shell
